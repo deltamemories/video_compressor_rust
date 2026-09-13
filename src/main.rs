@@ -1,5 +1,6 @@
 extern crate core;
 
+use std::fs;
 use std::path::Path;
 
 pub mod finder;
@@ -11,6 +12,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let videos = finder::find_mp4_files(path)?;
 
     for (index, video) in videos.iter().enumerate() {
+        let original_modify_time =  fs::metadata(video)?.modified();
+        match original_modify_time {
+            Ok(_) => {}
+            Err(_) => {
+                println!("Can't fetch modification time for #{}", index);
+                continue;
+            }
+        }
+
         println!("Start compressing #{:?}, path {:?}", index, video);
 
         match compressor::compress_file(video) {
@@ -22,8 +32,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     0.0
                 };
 
+                if original_modify_time.is_ok() {
+                    let f_time = filetime::FileTime::from(original_modify_time?);
+                    match filetime::set_file_mtime(&result.output_path, f_time) {
+                        Ok(_) => {}
+                        Err(_) => {
+                            println!("Can't update modification time for #{}", index);
+                        }
+                    }
+                }
+
+
                 println!(
-                    "Successfully compressed file #{}, Saved memory: {} MB, Compression ratio: {}, Time spent: {:?}", index, saved_bytes/1024/1024, compression_ratio, result.time_spent
+                    "Successfully compressed file #{}, Saved memory: {} MB, Compression ratio: {:.2}, Time spent: {}", index, saved_bytes/1024/1024, compression_ratio, result.time_spent.as_secs()
                 )
             }
 
