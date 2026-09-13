@@ -23,12 +23,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
 
                 println!(
-                    "Successfully compressed file #{}, Saved memory: {} MB, Compression ratio: {}", index, saved_bytes/1024/1024, compression_ratio
+                    "Successfully compressed file #{}, Saved memory: {} MB, Compression ratio: {}, Time spent: {:?}", index, saved_bytes/1024/1024, compression_ratio, result.time_spent
                 )
             }
 
-            Err(_) => {
-                eprintln!("Can't compress #{}", index)
+            Err(err) => {
+                eprintln!("Can't compress #{} due: {:?}", index, err)
             }
         }
     }

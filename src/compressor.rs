@@ -1,9 +1,9 @@
-use std::{io, time};
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::Instant;
+use std::{io, time};
 
 pub struct CompressResult {
     pub input_path: PathBuf,
@@ -13,6 +13,7 @@ pub struct CompressResult {
     pub time_spent: time::Duration,
 }
 
+#[derive(Debug)]
 pub enum CompressorError {
     Io(io::Error),
     FfmpegExecutionFailed(String),
@@ -40,7 +41,17 @@ pub fn compress_file(input_path: &Path) -> Result<CompressResult, CompressorErro
     let new_filename = format!("{stem}_compressed.{extension}");
     let output_path = input_path.with_file_name(new_filename);
 
+    let exists = fs::exists(&output_path)?;
+    if exists {
+        return Err(CompressorError::FfmpegExecutionFailed(format!(
+            "Output file {:?} already exists",
+            &output_path
+        )));
+    }
+
     let status = Command::new("ffmpeg")
+        .arg("-hide_banner")
+        .arg("-n")
         .arg("-i")
         .arg(input_path)
         .arg("-map")
@@ -58,12 +69,15 @@ pub fn compress_file(input_path: &Path) -> Result<CompressResult, CompressorErro
         .arg("-c:a")
         .arg("copy")
         .arg(&output_path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .status()?;
 
     if !status.success() {
-        return Err(CompressorError::FfmpegExecutionFailed(
-            format!("ffmpeg exited with status {:?}", status.code())
-        ));
+        return Err(CompressorError::FfmpegExecutionFailed(format!(
+            "ffmpeg exited with status {:?}",
+            status.code()
+        )));
     }
 
     let original_size = fs::metadata(input_path)?.len();
@@ -75,6 +89,6 @@ pub fn compress_file(input_path: &Path) -> Result<CompressResult, CompressorErro
         output_path,
         original_size,
         compressed_size,
-        time_spent
+        time_spent,
     })
 }
