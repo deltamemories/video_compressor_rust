@@ -3,16 +3,38 @@ extern crate core;
 use std::fs;
 use std::path::Path;
 
-pub mod finder;
 pub mod compressor;
+pub mod db;
+pub mod finder;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let app_config_path = dirs::config_dir()
+        .ok_or("Can't get config folder path")?
+        .join("video_compressor_rust");
+    let db_path = app_config_path.join("database.db");
+    fs::create_dir_all(&app_config_path)?;
+
+    println!("database path:{:?}", &db_path);
+
+    let database = db::Db::open(&db_path)?;
+
     let path = Path::new("Y:\\0");
 
-    let videos = finder::find_mp4_files(path)?;
+    let videos_all = finder::find_mp4_files(path)?;
+    let videos = database.register_files(&videos_all)?;
+
+    let mut suc_processed: Vec<&Path> = Vec::new();
+    let mut failed_videos: Vec<&Path> = Vec::new();
 
     for (index, video) in videos.iter().enumerate() {
-        let original_modify_time =  fs::metadata(video)?.modified();
+        let Ok(video_size) = fs::metadata(&video).map(|m| m.len()) else {
+            println!("Can't fetch file size for #{}, skip", index);
+            continue;
+        };
+
+        database.set_as_processing(video, Some(video_size))?;
+
+        let original_modify_time = fs::metadata(video)?.modified();
         match original_modify_time {
             Ok(_) => {}
             Err(_) => {
@@ -42,15 +64,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
 
+                database.set_as_completed(
+                    video,
+                    Some(result.original_size),
+                    Some(result.compressed_size),
+                )?;
+                suc_processed.push(video);
 
                 println!(
-                    "Successfully compressed file #{}, Saved memory: {} MB, Compression ratio: {:.2}, Time spent: {}", index, saved_bytes/1024/1024, compression_ratio, result.time_spent.as_secs()
+                    "Successfully compressed file #{}, Saved memory: {} MB, Compression ratio: {:.2}, Time spent: {}",
+                    index,
+                    saved_bytes / 1024 / 1024,
+                    compression_ratio,
+                    result.time_spent.as_secs()
                 )
             }
 
             Err(err) => {
+                database.set_as_failed(video, Some(&format!("{:?}", err)))?;
+                failed_videos.push(video);
                 eprintln!("Can't compress #{} due: {:?}", index, err)
             }
+        }
+    }
+
+    if videos_all.len() != videos.len() {
+        println!(
+            "Successfully compressed {} of {}, skipped due duplicates: {}",
+            suc_processed.len(),
+            videos.len(),
+            videos_all.len()
+        );
+    } else {
+        println!(
+            "Successfully compressed {} of {}",
+            suc_processed.len(),
+            videos.len()
+        );
+    }
+
+    if failed_videos.len() > 0 {
+        println!("Failed videos:");
+        for f in failed_videos {
+            println!("{:?}", f);
         }
     }
 
