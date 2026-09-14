@@ -1,7 +1,8 @@
 extern crate core;
 
 use std::fs;
-use std::path::Path;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
 pub mod compressor;
 pub mod db;
@@ -18,9 +19,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let database = db::Db::open(&db_path)?;
 
-    let path = Path::new("Y:\\0");
+    let path = get_target_path()?;
 
-    let videos_all = finder::find_mp4_files(path)?;
+    let videos_all = finder::find_mp4_files(&path)?;
     let videos = database.register_files(&videos_all)?;
 
     let mut suc_processed: Vec<&Path> = Vec::new();
@@ -111,4 +112,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+fn get_target_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    if let Some(arg) = std::env::args().nth(1) {
+        return Ok(PathBuf::from(arg.trim()));
+    }
+
+    println!("Enter videos folder path");
+    std::io::stdout().flush()?;
+
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    let trimmed = input.trim().trim_end_matches('"');
+
+    if trimmed.is_empty() {
+        return Err("Empty path".into());
+    }
+
+    Ok(PathBuf::from(trimmed))
 }
