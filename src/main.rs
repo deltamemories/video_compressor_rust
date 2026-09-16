@@ -1,6 +1,6 @@
 extern crate core;
 
-use std::fs;
+use std::{fs, time};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -26,6 +26,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut suc_processed: Vec<&Path> = Vec::new();
     let mut failed_videos: Vec<&Path> = Vec::new();
+    let mut saved_bytes_total: u64 = 0;
+    let mut time_spent_total = time::Duration::from_secs(0);
+
+    println!("Will be compressed: {} files", videos.len());
 
     for (index, video) in videos.iter().enumerate() {
         let Ok(video_size) = fs::metadata(&video).map(|m| m.len()) else {
@@ -71,11 +75,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Some(result.compressed_size),
                 )?;
                 suc_processed.push(video);
+                saved_bytes_total += result.original_size - result.compressed_size;
+                time_spent_total += result.time_spent;
 
                 println!(
-                    "Successfully compressed file #{}, Saved memory: {} MB, Compression ratio: {:.2}, Time spent: {}",
+                    "Successfully compressed file #{}, Saved memory: {} MB ({} -> {}), Compression ratio: {:.2}, Time spent: {}s",
                     index,
                     saved_bytes / 1024 / 1024,
+                    result.original_size / 1024 / 1024,
+                    result.compressed_size / 1024 / 1024,
                     compression_ratio,
                     result.time_spent.as_secs()
                 )
@@ -103,6 +111,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             videos.len()
         );
     }
+
+    println!("Total saved memory: {} MB, Total time spent: {}s", saved_bytes_total / 1024 / 1024, time_spent_total.as_secs());
 
     if failed_videos.len() > 0 {
         println!("Failed videos:");
