@@ -91,6 +91,43 @@ impl Db {
         self.update(file_path, TaskStatus::Failed, None, None, error_msg)
     }
 
+    pub fn get_pending(&self) -> rusqlite::Result<Vec<PathBuf>> {
+        self.get_by_status(TaskStatus::Pending)
+    }
+
+    pub fn get_failed(&self) -> rusqlite::Result<Vec<PathBuf>> {
+        self.get_by_status(TaskStatus::Failed)
+    }
+
+    pub fn get_processing(&self) -> rusqlite::Result<Vec<PathBuf>> {
+        self.get_by_status(TaskStatus::Processing)
+    }
+
+    pub fn get_completed(&self) -> rusqlite::Result<Vec<PathBuf>> {
+        self.get_by_status(TaskStatus::Completed)
+    }
+
+    fn get_by_status(&self, status: TaskStatus) -> rusqlite::Result<Vec<PathBuf>> {
+        let s = status.as_str();
+
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT file_path FROM tasks WHERE status = '{}';",
+            s
+        ))?;
+
+        let rows = stmt.query_map([], |row| {
+            let path_str: String = row.get(0)?;
+            Ok(PathBuf::from(path_str))
+        })?;
+
+        let mut pending_files = Vec::new();
+        for path in rows {
+            pending_files.push(path?);
+        }
+
+        Ok(pending_files)
+    }
+
     fn update(
         &self,
         file_path: &Path,
