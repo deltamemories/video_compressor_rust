@@ -1,9 +1,9 @@
 extern crate core;
 
-use std::{fs, time};
-use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::{fs, time};
 
+pub mod cli_parser;
 pub mod compressor;
 pub mod db;
 pub mod finder;
@@ -19,10 +19,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let database = db::Db::open(&db_path)?;
 
-    let path = get_target_path()?;
+    let app_mode = cli_parser::get_target_path()?;
 
-    let videos_all = finder::find_mp4_files(&path)?;
-    let videos = database.register_files(&videos_all)?;
+    let (videos, videos_all): (Vec<PathBuf>, Vec<PathBuf>) = match app_mode {
+        cli_parser::AppMode::Continue => {
+            let pending_videos = database.get_pending()?;
+            (pending_videos.clone(), pending_videos)
+        }
+
+        cli_parser::AppMode::ProcessDirectory(dir) => {
+            let videos_all = finder::find_mp4_files(&dir)?;
+            (database.register_files(&videos_all)?, videos_all)
+        }
+    };
 
     let mut suc_processed: Vec<&Path> = Vec::new();
     let mut failed_videos: Vec<&Path> = Vec::new();
@@ -32,8 +41,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Will be compressed: {} files", videos.len());
 
     for (index, video) in videos.iter().enumerate() {
+        println!("Start compressing #{:?}, path {:?}", index, video);
+
         let Ok(video_size) = fs::metadata(&video).map(|m| m.len()) else {
             println!("Can't fetch file size for #{}, skip", index);
+            database.set_as_failed(video, Some(&"Can't fetch file size".to_string()))?;
             continue;
         };
 
@@ -44,11 +56,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(_) => {}
             Err(_) => {
                 println!("Can't fetch modification time for #{}", index);
+                database.set_as_failed(video, Some(&"Can't fetch modification time".to_string()))?;
                 continue;
             }
         }
-
-        println!("Start compressing #{:?}, path {:?}", index, video);
 
         match compressor::compress_file(video) {
             Ok(result) => {
@@ -112,7 +123,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    println!("Total saved memory: {} MB, Total time spent: {}s", saved_bytes_total / 1024 / 1024, time_spent_total.as_secs());
+    println!(
+        "Total saved memory: {} MB, Total time spent: {}s",
+        saved_bytes_total / 1024 / 1024,
+        time_spent_total.as_secs()
+    );
 
     if failed_videos.len() > 0 {
         println!("Failed videos:");
@@ -122,23 +137,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
-}
-
-fn get_target_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    if let Some(arg) = std::env::args().nth(1) {
-        return Ok(PathBuf::from(arg.trim()));
-    }
-
-    println!("Enter videos folder path");
-    std::io::stdout().flush()?;
-
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input)?;
-    let trimmed = input.trim().trim_end_matches('"');
-
-    if trimmed.is_empty() {
-        return Err("Empty path".into());
-    }
-
-    Ok(PathBuf::from(trimmed))
 }
