@@ -124,12 +124,16 @@ impl Db {
         Ok(())
     }
 
-    pub fn set_as_failed(&self, file_path: &Path, error_msg: &str) -> rusqlite::Result<()> {
+    pub fn set_as_failed(
+        &self,
+        file_path: &Path,
+        error_msg: &str
+    ) -> rusqlite::Result<()> {
         let ps = normalize_path(file_path)?;
         self.conn.execute(
             "UPDATE tasks
-            SET status = 'completed', original_size = ?1, compressed_size = ?2, updated_at = CURRENT_TIMESTAMP
-            WHERE file_path = ?3;",
+            SET status = 'failed', error_message = ?1, updated_at = CURRENT_TIMESTAMP
+            WHERE file_path = ?2;",
             params![error_msg, ps],
         )?;
         Ok(())
