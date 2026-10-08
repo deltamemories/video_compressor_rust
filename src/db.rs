@@ -27,6 +27,11 @@ impl ToSql for TaskStatus {
     }
 }
 
+pub enum HashType {
+    OriginalHash,
+    CompressedHash,
+}
+
 pub struct Db {
     conn: rusqlite::Connection,
 }
@@ -48,7 +53,9 @@ impl Db {
                     original_size INTEGER,
                     compressed_size INTEGER,
                     error_message TEXT,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    original_hash TEXT,
+                    compressed_hash TEXT
             );",
             [],
         )?;
@@ -84,13 +91,18 @@ impl Db {
         Ok(added_files)
     }
 
-    pub fn set_as_processing(&self, file_path: &Path, original_size: u64) -> rusqlite::Result<()> {
+    pub fn set_as_processing(
+        &self,
+        file_path: &Path,
+        original_size: u64,
+        original_hash: &str,
+    ) -> rusqlite::Result<()> {
         let ps = normalize_path(file_path)?;
 
         self.conn.execute(
-            "UPDATE tasks SET status = 'processing', original_size = ?1, updated_at = CURRENT_TIMESTAMP
-            WHERE file_path = ?2;",
-            params![original_size as i64, ps],
+            "UPDATE tasks SET status = 'processing', original_size = ?1, updated_at = CURRENT_TIMESTAMP, original_hash = ?2
+            WHERE file_path = ?3;",
+            params![original_size as i64, original_hash, ps],
         )?;
         Ok(())
     }
@@ -100,13 +112,14 @@ impl Db {
         file_path: &Path,
         original_size: u64,
         compressed_size: u64,
+        compressed_hash: &str,
     ) -> rusqlite::Result<()> {
         let ps = normalize_path(file_path)?;
         self.conn.execute(
             "UPDATE tasks\
-            SET status = 'completed', original_size = ?1, compressed_size = ?2, updated_at = CURRENT_TIMESTAMP\
-            WHERE file_path = ?3;",
-            params![original_size as i64, compressed_size as i64, ps],
+            SET status = 'completed', original_size = ?1, compressed_size = ?2, updated_at = CURRENT_TIMESTAMP, compressed_hash = ?3
+            WHERE file_path = ?4;",
+            params![original_size as i64, compressed_size as i64, compressed_hash, ps],
         )?;
         Ok(())
     }
@@ -146,6 +159,32 @@ impl Db {
             .prepare("SELECT file_path FROM tasks WHERE status = ?1;")?;
 
         let rows = stmt.query_map([s], |row| {
+            let path_str: String = row.get(0)?;
+            Ok(PathBuf::from(path_str))
+        })?;
+
+        rows.collect()
+    }
+
+    pub fn get_by_original_hash(&self, hash: &str) -> rusqlite::Result<Vec<PathBuf>> {
+        self.get_by_hash(hash, HashType::OriginalHash)
+    }
+
+    pub fn get_by_compressed_hash(&self, hash: &str) -> rusqlite::Result<Vec<PathBuf>> {
+        self.get_by_hash(hash, HashType::CompressedHash)
+    }
+
+    fn get_by_hash(&self, hash: &str, hash_type: HashType) -> rusqlite::Result<Vec<PathBuf>> {
+        let hash_col = match hash_type {
+            HashType::OriginalHash => "original_hash",
+            HashType::CompressedHash => "compressed_hash",
+        };
+
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT file_path FROM tasks WHERE {hash_col} == ?1"
+        ))?;
+
+        let rows = stmt.query_map([hash], |row| {
             let path_str: String = row.get(0)?;
             Ok(PathBuf::from(path_str))
         })?;
