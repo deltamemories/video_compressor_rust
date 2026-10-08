@@ -1,7 +1,8 @@
-use rusqlite::{params, OptionalExtension};
+use rusqlite::types::ToSqlOutput;
+use rusqlite::{OptionalExtension, ToSql, params};
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskStatus {
     Pending,
     Processing,
@@ -17,6 +18,12 @@ impl TaskStatus {
             TaskStatus::Completed => "completed",
             TaskStatus::Failed => "failed",
         }
+    }
+}
+
+impl ToSql for TaskStatus {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        Ok(ToSqlOutput::from(self.as_str()))
     }
 }
 
@@ -51,44 +58,68 @@ impl Db {
 
     pub fn register_files(&self, files: &[PathBuf]) -> rusqlite::Result<Vec<PathBuf>> {
         let mut added_files: Vec<PathBuf> = Vec::new();
-
         let tx = self.conn.unchecked_transaction()?;
 
-        let mut stmt = tx.prepare(
-            "INSERT OR IGNORE INTO tasks (file_path, status)
+        {
+            let mut stmt = tx.prepare(
+                "INSERT OR IGNORE INTO tasks (file_path, status)
                 VALUES (?1, 'pending')
                 RETURNING id;",
-        )?;
+            )?;
 
-        for file in files {
-            if let Some(path_str) = file.to_str() {
-                let normalized_path = path_str.replace("\\", "/");
+            for file in files {
+                if let Ok(path_str) = normalize_path(file) {
+                    let task_id: Option<i64> = stmt
+                        .query_row(params![path_str], |row| row.get(0))
+                        .optional()?;
 
-                let task_id: Option<i64> = stmt
-                    .query_row(params![normalized_path], |row| row.get(0))
-                    .optional()?;
-
-                if let Some(_) = task_id {
-                    added_files.push(file.clone());
+                    if task_id.is_some() {
+                        added_files.push(file.clone());
+                    }
                 }
             }
         }
 
-        drop(stmt);
         tx.commit()?;
         Ok(added_files)
     }
-    
-    pub fn set_as_processing(&self, file_path: &Path, original_size: Option<u64>) -> rusqlite::Result<()> {
-        self.update(file_path, TaskStatus::Processing, original_size, None, None)
+
+    pub fn set_as_processing(&self, file_path: &Path, original_size: u64) -> rusqlite::Result<()> {
+        let ps = normalize_path(file_path)?;
+
+        self.conn.execute(
+            "UPDATE tasks SET status = 'processing', original_size = ?1, updated_at = CURRENT_TIMESTAMP
+            WHERE file_path = ?2;",
+            params![original_size as i64, ps],
+        )?;
+        Ok(())
     }
-    
-    pub fn set_as_completed(&self, file_path: &Path, original_size: Option<u64>, compressed_size: Option<u64>) -> rusqlite::Result<()> {
-        self.update(file_path, TaskStatus::Completed, original_size, compressed_size, None)
+
+    pub fn set_as_completed(
+        &self,
+        file_path: &Path,
+        original_size: u64,
+        compressed_size: u64,
+    ) -> rusqlite::Result<()> {
+        let ps = normalize_path(file_path)?;
+        self.conn.execute(
+            "UPDATE tasks\
+            SET status = 'completed', original_size = ?1, compressed_size = ?2, updated_at = CURRENT_TIMESTAMP\
+            WHERE file_path = ?3;",
+            params![original_size as i64, compressed_size as i64, ps],
+        )?;
+        Ok(())
     }
-    
-    pub fn set_as_failed(&self, file_path: &Path, error_msg: Option<&str>) -> rusqlite::Result<()> {
-        self.update(file_path, TaskStatus::Failed, None, None, error_msg)
+
+    pub fn set_as_failed(&self, file_path: &Path, error_msg: &str) -> rusqlite::Result<()> {
+        let ps = normalize_path(file_path)?;
+        self.conn.execute(
+            "UPDATE tasks\
+            SET status = 'completed', original_size = ?1, compressed_size = ?2, updated_at = CURRENT_TIMESTAMP\
+            WHERE file_path = ?3;",
+            params![error_msg, ps],
+        )?;
+        Ok(())
     }
 
     pub fn get_pending(&self) -> rusqlite::Result<Vec<PathBuf>> {
@@ -110,59 +141,24 @@ impl Db {
     fn get_by_status(&self, status: TaskStatus) -> rusqlite::Result<Vec<PathBuf>> {
         let s = status.as_str();
 
-        let mut stmt = self.conn.prepare(&format!(
-            "SELECT file_path FROM tasks WHERE status = '{}';",
-            s
-        ))?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT file_path FROM tasks WHERE status = ?1;")?;
 
-        let rows = stmt.query_map([], |row| {
+        let rows = stmt.query_map([s], |row| {
             let path_str: String = row.get(0)?;
             Ok(PathBuf::from(path_str))
         })?;
 
-        let mut pending_files = Vec::new();
-        for path in rows {
-            pending_files.push(path?);
-        }
-
-        Ok(pending_files)
+        rows.collect()
     }
+}
 
-    fn update(
-        &self,
-        file_path: &Path,
-        status: TaskStatus,
-        original_size: Option<u64>,
-        compressed_size: Option<u64>,
-        error_message: Option<&str>,
-    ) -> rusqlite::Result<()> {
-        let path_str = file_path
-            .as_os_str()
-            .to_str()
-            .ok_or_else(|| {
-                rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "Invalid file path",
-                )))
-            })?
-            .replace("\\", "/");
-
-        self.conn.execute(
-            "UPDATE tasks
-            SET status = ?1,
-            original_size = ?2,
-            compressed_size = ?3,
-            error_message = ?4,
-            updated_at = CURRENT_TIMESTAMP
-            WHERE file_path = ?5;",
-            params![
-                status.as_str(),
-                original_size.map(|v| v as i64),
-                compressed_size.map(|v| v as i64),
-                error_message,
-                path_str
-            ],
-        )?;
-        Ok(())
-    }
+fn normalize_path(path: &Path) -> rusqlite::Result<String> {
+    path.to_str().map(|s| s.replace("\\", "/")).ok_or_else(|| {
+        rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Invalid file path",
+        )))
+    })
 }
