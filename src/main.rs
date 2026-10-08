@@ -2,12 +2,12 @@ extern crate core;
 
 use std::path::{Path, PathBuf};
 use std::{fs, time};
-use std::fmt::Debug;
 
 pub mod cli_parser;
 pub mod compressor;
 pub mod db;
 pub mod finder;
+pub mod hash_calc;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_config_path = dirs::config_dir()
@@ -50,7 +50,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         };
 
-        database.set_as_processing(video, video_size)?;
+        let Ok(video_original_hash) = hash_calc::compute_hash(&video).map(|h| h.to_string()) else {
+            println!("Can't compute hash for #{}, skip", index);
+            database.set_as_failed(video, "Can't compute hash for original file")?;
+            continue;
+        };
+
+        if !database.get_by_compressed_hash(&video_original_hash)?.is_empty() {
+            println!("#{} is compressed file, skip", index);
+            continue;
+        }
+
+        database.set_as_processing(video, video_size, &video_original_hash)?;
 
         let original_modify_time = fs::metadata(video)?.modified();
         match original_modify_time {
@@ -81,10 +92,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
 
+                let Ok(video_compressed_hash) = hash_calc::compute_hash(result.output_path).map(|h| h.to_string()) else {
+                    println!("Can't compute compressed file hash for #{}, skip", index);
+                    database.set_as_failed(video, "Can't compute hash for compressed file")?;
+                    continue;
+                };
+
                 database.set_as_completed(
                     video,
-                    result.original_size,
                     result.compressed_size,
+                    &video_compressed_hash
                 )?;
                 suc_processed.push(video);
                 saved_bytes_total += result.original_size - result.compressed_size;
