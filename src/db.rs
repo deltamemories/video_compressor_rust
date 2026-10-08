@@ -116,7 +116,7 @@ impl Db {
     ) -> rusqlite::Result<()> {
         let ps = normalize_path(file_path)?;
         self.conn.execute(
-            "UPDATE tasks\
+            "UPDATE tasks
             SET status = 'completed', original_size = ?1, compressed_size = ?2, updated_at = CURRENT_TIMESTAMP, compressed_hash = ?3
             WHERE file_path = ?4;",
             params![original_size as i64, compressed_size as i64, compressed_hash, ps],
@@ -127,8 +127,8 @@ impl Db {
     pub fn set_as_failed(&self, file_path: &Path, error_msg: &str) -> rusqlite::Result<()> {
         let ps = normalize_path(file_path)?;
         self.conn.execute(
-            "UPDATE tasks\
-            SET status = 'completed', original_size = ?1, compressed_size = ?2, updated_at = CURRENT_TIMESTAMP\
+            "UPDATE tasks
+            SET status = 'completed', original_size = ?1, compressed_size = ?2, updated_at = CURRENT_TIMESTAMP
             WHERE file_path = ?3;",
             params![error_msg, ps],
         )?;
