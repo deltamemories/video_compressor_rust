@@ -2,6 +2,7 @@ extern crate core;
 
 use std::path::{Path, PathBuf};
 use std::{fs, time};
+use std::fmt::Debug;
 
 pub mod cli_parser;
 pub mod compressor;
@@ -45,18 +46,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let Ok(video_size) = fs::metadata(&video).map(|m| m.len()) else {
             println!("Can't fetch file size for #{}, skip", index);
-            database.set_as_failed(video, Some(&"Can't fetch file size".to_string()))?;
+            database.set_as_failed(video, "Can't fetch file size")?;
             continue;
         };
 
-        database.set_as_processing(video, Some(video_size))?;
+        database.set_as_processing(video, video_size)?;
 
         let original_modify_time = fs::metadata(video)?.modified();
         match original_modify_time {
             Ok(_) => {}
             Err(_) => {
                 println!("Can't fetch modification time for #{}", index);
-                database.set_as_failed(video, Some(&"Can't fetch modification time".to_string()))?;
+                database.set_as_failed(video, "Can't fetch modification time")?;
                 continue;
             }
         }
@@ -82,8 +83,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 database.set_as_completed(
                     video,
-                    Some(result.original_size),
-                    Some(result.compressed_size),
+                    result.original_size,
+                    result.compressed_size,
                 )?;
                 suc_processed.push(video);
                 saved_bytes_total += result.original_size - result.compressed_size;
@@ -101,7 +102,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             Err(err) => {
-                database.set_as_failed(video, Some(&format!("{:?}", err)))?;
+                database.set_as_failed(video, &format!("{:?}", err))?;
                 failed_videos.push(video);
                 eprintln!("Can't compress #{} due: {:?}", index, err)
             }
