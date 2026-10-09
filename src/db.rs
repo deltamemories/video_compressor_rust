@@ -63,9 +63,9 @@ impl Db {
         Ok(())
     }
 
-    pub fn register_files(&self, files: &[PathBuf]) -> rusqlite::Result<Vec<PathBuf>> {
+    pub fn register_files(&mut self, files: &[PathBuf]) -> rusqlite::Result<Vec<PathBuf>> {
         let mut added_files: Vec<PathBuf> = Vec::new();
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.conn.transaction()?;
 
         {
             let mut stmt = tx.prepare(
