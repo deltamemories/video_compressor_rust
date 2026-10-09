@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("database path:{:?}", &db_path);
 
-    let database = db::Db::open(&db_path)?;
+    let mut database = db::Db::open(&db_path)?;
 
     let app_mode = cli_parser::get_target_path()?;
 
