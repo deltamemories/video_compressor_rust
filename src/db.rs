@@ -11,8 +11,8 @@ impl Db {
     pub fn open(db_path: &Path) -> Result<Self, Box<dyn Error>> {
         let conn = Connection::open(db_path)?;
 
-        conn.execute("PRAGMA foreign_keys = ON;", [])?;
-        conn.execute("PRAGMA busy_timeout = 5000;", [])?;
+        conn.pragma_update(None,"foreign_keys","ON")?;
+        conn.pragma_update(None,"busy_timeout", 5000)?;
 
         let mut db = Db { conn };
         db.init()?;
