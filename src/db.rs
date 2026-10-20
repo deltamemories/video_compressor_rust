@@ -1,14 +1,14 @@
 use rusqlite::{Connection, TransactionBehavior};
 use rusqlite_migration::{M, Migrations};
 use std::error::Error;
-use std::path::{Path, PathBuf};
+use std::path::{Path};
 
 pub struct Db {
     conn: Connection,
 }
 
 pub struct FileInfo {
-    pub path: PathBuf,
+    pub path: String,
     pub hash: String,
     pub size: i64,
 }
@@ -92,7 +92,7 @@ impl Db {
             VALUES (?1, ?2, ?3)
             ON CONFLICT (content_hash, file_path) DO NOTHING
             "#,
-            rusqlite::params![file.hash, file.path.as_os_str().as_encoded_bytes(), file.size]
+            rusqlite::params![file.hash, file.path, file.size]
         )?;
 
         if rows_affected == 0 {
