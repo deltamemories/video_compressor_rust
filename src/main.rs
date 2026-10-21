@@ -120,6 +120,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         eprintln!("Can't update modification time for #{}", index);
                         let elapsed = start_time.elapsed().as_secs() as i64;
                         database.fail_job(job_id, "Can't update modification time", elapsed)?;
+                        continue;
                     }
                 }
 
