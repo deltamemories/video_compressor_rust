@@ -135,6 +135,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     None => {
                         failed_videos.push(video);
                         eprintln!("Can't convert compressed video PathBuf to String");
+                        let elapsed = start_time.elapsed().as_secs() as i64;
+                        database.fail_job(job_id, "Can't convert compressed video PathBuf to String", elapsed)?;
                         continue;
                     }
                 };
