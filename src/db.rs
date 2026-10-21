@@ -43,7 +43,7 @@ impl Db {
                 CREATE TABLE files (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     content_hash TEXT NOT NULL,
-                    file_path BLOB NOT NULL,
+                    file_path TEXT NOT NULL,
                     file_size INTEGER NOT NULL
                 );
 
