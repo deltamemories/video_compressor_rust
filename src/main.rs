@@ -1,5 +1,3 @@
-extern crate core;
-
 use std::path::{Path, PathBuf};
 use std::{fs, time};
 use crate::db::AddFileError;
