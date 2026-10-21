@@ -65,8 +65,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
 
+        let video_path = match video.to_str() {
+            Some(path) => path.to_owned().replace("\\", "/"),
+            None => {
+                failed_videos.push(video);
+                eprintln!("Can't convert video PathBuf to String");
+                continue;
+            }
+        };
+
         let video_id = match database.add_file(db::FileInfo{
-            path: video.to_path_buf(),
+            path: video_path,
             hash: video_original_hash,
             size: video_size,
         }) {
@@ -122,8 +131,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 };
 
+                let compressed_video_path = match result.output_path.to_str() {
+                  Some(path) => path.to_owned().replace("\\", "/"),
+                    None => {
+                        failed_videos.push(video);
+                        eprintln!("Can't convert compressed video PathBuf to String");
+                        continue;
+                    }
+                };
+
                 let compressed_id = match database.add_file(db::FileInfo{
-                    path: result.output_path,
+                    path: compressed_video_path,
                     hash: video_compressed_hash,
                     size: result.compressed_size as i64
                 }) {
