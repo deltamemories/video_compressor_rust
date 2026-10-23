@@ -7,6 +7,7 @@ pub mod compressor;
 pub mod db;
 pub mod finder;
 pub mod hash_calc;
+pub mod health_checker;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_config_path = dirs::config_dir()
