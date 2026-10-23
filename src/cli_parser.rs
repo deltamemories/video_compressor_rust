@@ -24,7 +24,7 @@ pub fn get_target_path() -> Result<AppMode, Box<dyn std::error::Error>> {
 
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
-    let trimmed = input.trim().trim_end_matches('"');
+    let trimmed = input.trim().trim_end_matches('"').replace("\\", "/");
 
     if trimmed.is_empty() {
         return Err("Empty path".into());
